@@ -35,16 +35,16 @@ ___
 
 ### Example docker-compose file
 
-	```yaml
-	services:
-		mssql:
-			image: bwdesigngroup/mssql
-			ports:
-			- "1433:1433"
-			volumes:
-			- ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-			- ./backups/my-database.bak:/backups/my-database.bak
-	```
+```yaml
+services:
+	mssql:
+		image: bwdesigngroup/mssql
+		ports:
+		- "1433:1433"
+		volumes:
+		- ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+		- ./backups/my-database.bak:/backups/my-database.bak
+```
 
 ___
 
