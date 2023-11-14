@@ -1,4 +1,4 @@
-# bwdesigngroup/mssql-docker
+# ghcr.io/design-group/mssql-docker/mssql-docker
 
 ## Design Group MSSQL Image
 
@@ -12,9 +12,12 @@ ___
 
 ## Getting the Docker Imgage
 
-If you're looking at this repository from GitHub, note that the docker image is actually `bwdesigngroup/mssql-docker`, not `design-group/mssql-docker`.
+1. The user must have a local personal access token to authenticate to the Github Repository. For details on how to authenticate to the Github Repository, see the [Github Documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic).
 
-When pulling the docker image, note that using the copy link from the home page (`docker pull mssql/ignition-docker`) will automatically pull the most recent version of MSSQL configured in the image.
+1. This docker image is uploaded to the github container registry, and can be pulled with the following:
+```sh
+docker pull ghcr.io/design-group/mssql-docker/mssql-docker:latest
+```
 
 ___
 
@@ -42,10 +45,13 @@ ___
 ```yaml
 services:
 	mssql:
-		image: bwdesigngroup/mssql
+		image: ghcr.io/design-group/mssql-docker/mssql-docker:latest
 		ports:
 		- "1433:1433"
+		environment:
+		  INSERT_SIMULATED_DATA: "true"
 		volumes:
+		- ./simulated-data:/simulated-data
 		- ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
 		- ./backups/my-database.bak:/backups/my-database.bak
 ```

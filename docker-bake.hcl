@@ -1,28 +1,20 @@
-# docker-bake.hcl
-
-group "build" {
-	targets = [
-		"mssql-base"
-	]
-}
-
 variable "BASE_IMAGE_NAME" {
-    default = "bwdesigngroup/mssql-docker"
+    default = "mssql-docker"
 }
 
-
-// ###########################################################################################
-//  Current Imaages
-// ###########################################################################################
-
-target "mssql-base" {
-	context = "."
-	args = {}
-	platforms = [
+target "default" {
+    name="${BASE_IMAGE_NAME}"
+    context = "."
+	matrix = {
+		version = ["latest"]
+	}
+    dockerfile = "Dockerfile"
+    platforms = [
 		"linux/amd64", 
-		"linux/arm64"
-	]
+		"linux/arm64", 
+		"linux/arm/v7",
+ 	]
 	tags = [
-		"${BASE_IMAGE_NAME}"
+		"ghcr.io/design-group/mssql-docker/${BASE_IMAGE_NAME}:${version}"
 	]
 }
