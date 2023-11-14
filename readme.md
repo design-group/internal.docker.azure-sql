@@ -24,7 +24,7 @@ This is a derived image of the microsoft `azure-sql-edge` image. Please see the 
 
 ### Simulated Data Insertion
 
-This image will automatically insert simulated data into the database if the `INSERT_SIMULATED_DATA` environment variable is set to `true`. This is useful for testing purposes, but should not be used in production. To make these files available to the image, you can mount a volume to `/simulated-data`. The files should be in the format `table_name.csv` and should be comma separated. The first line of the file should be the column names. The files should be mounted in the `/simulated-data` directory. For example, if you have a file named `users.csv` that you want to insert into the `users` table, you would mount the file to `/simulated-data/users.csv`.
+This image will automatically insert simulated data into the database if the `INSERT_SIMULATED_DATA` environment variable is set to `true`. This is useful for testing purposes, but should not be used in production. To make these files available to the image, you can mount a volume to `/simulated-data`. The files should be in the `.sql` format and contain any necessary `INSERT` statements. The files will be executed in alphabetical order.
 
 ### Environment Variables
 

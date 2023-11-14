@@ -25,9 +25,10 @@ execute_startup_scripts() {
 copy_simulation_scripts() {
 	if [ "$INSERT_SIMULATED_DATA" = "true" ]; then
 		# Iterate through any CSV files in the /simulated-data directory and insert them into the database
-		for f in /simulated-data/*.csv; do
+		for f in /simulated-data/*; do
 			case "$f" in
-				*.csv)    echo "$0: inserting $f"; sqlcmd -S localhost -U sa -i /scripts/insert-simulated-data.sql -v csvFile="$f"; echo ;;
+				*.sh)     echo "$0: running $f"; . "$f" ;;
+				*.sql)    echo "$0: running $f"; sqlcmd -S localhost -U sa -i "$f"; echo ;;
 				*)        echo "$0: ignoring $f" ;;
 			esac
 			echo
