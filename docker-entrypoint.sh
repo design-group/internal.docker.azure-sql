@@ -2,6 +2,16 @@
 # shellcheck source=/dev/null
 
 ################################################################################
+# Check for the `INSERT_SIMULATED_DATA` environment variable, and if so, copy the scripts from `/simulated-data` to `/docker-entrypoint-initdb.d`
+################################################################################
+copy_simulation_scripts() {
+	if [ "$INSERT_SIMULATED_DATA" = "true" ]; then
+		echo "Copying simulation scripts to /docker-entrypoint-initdb.d"
+		cp -r /simulated-data/* /docker-entrypoint-initdb.d/
+	fi
+}
+
+################################################################################
 # Execute any startup .sql scripts
 ################################################################################
 execute_startup_scripts() {
@@ -59,6 +69,8 @@ if [ ! -f "${MSSQL_BASE}/.docker-init-complete" ]; then
 
 	restore_database_backups
 
+	copy_simulation_scripts
+	
 	execute_startup_scripts
 
     echo "Startup Complete."

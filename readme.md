@@ -22,6 +22,10 @@ ___
 
 This is a derived image of the microsoft `azure-sql-edge` image. Please see the [Azure SQL Edge Docker Hub](https://hub.docker.com/_/microsoft-azure-sql-edge?tab=description) for more information on the base image. This image should be able to take all arguments provided by the base image, but has not been tested.
 
+### Simulated Data Insertion
+
+This image will automatically insert simulated data into the database if the `INSERT_SIMULATED_DATA` environment variable is set to `true`. This is useful for testing purposes, but should not be used in production.
+
 ### Environment Variables
 
 This image also preloads the following environment variables by default:
@@ -30,7 +34,7 @@ This image also preloads the following environment variables by default:
 | `ACCEPT_EULA` | `Y` |
 | `SA_PASSWORD` | `P@ssword1!` |
 | `MSSQL_PID` | `Developer` |
-
+| `INSERT_SIMULATED_DATA` | `false` |
 ___
 
 ### Example docker-compose file
