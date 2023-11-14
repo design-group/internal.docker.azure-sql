@@ -2,6 +2,12 @@ name: Build and Publish
 
 on:
   push:
+	paths:
+	  - 'Dockerfile'
+	  - 'docker-bake.hcl'
+	  - '*.sh'
+	  - '*.sql'
+	  - sqlcmd/*.*
     branches:
     - master
   workflow_dispatch:
