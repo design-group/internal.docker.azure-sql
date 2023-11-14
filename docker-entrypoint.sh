@@ -1,15 +1,6 @@
 #!/bin/bash
 # shellcheck source=/dev/null
 
-################################################################################
-# Check for the `INSERT_SIMULATED_DATA` environment variable, and if so, copy the scripts from `/simulated-data` to `/docker-entrypoint-initdb.d`
-################################################################################
-copy_simulation_scripts() {
-	if [ "$INSERT_SIMULATED_DATA" = "true" ]; then
-		echo "Copying simulation scripts to /docker-entrypoint-initdb.d"
-		cp -r /simulated-data/* /docker-entrypoint-initdb.d/
-	fi
-}
 
 ################################################################################
 # Execute any startup .sql scripts
@@ -24,6 +15,24 @@ execute_startup_scripts() {
 		esac
 		echo
 	done
+}
+
+################################################################################
+# Check for the `INSERT_SIMULATED_DATA` environment variable, and if so, insert the csvs from the `/simulated-data` directory into the database.
+#
+# This image will automatically insert simulated data into the database if the `INSERT_SIMULATED_DATA` environment variable is set to `true`. This is useful for testing purposes, but should not be used in production. To make these files available to the image, you can mount a volume to `/simulated-data`. The files should be in the format `table_name.csv` and should be comma separated. The first line of the file should be the column names. The files should be mounted in the `/simulated-data` directory. For example, if you have a file named `users.csv` that you want to insert into the `users` table, you would mount the file to `/simulated-data/users.csv`.
+################################################################################
+copy_simulation_scripts() {
+	if [ "$INSERT_SIMULATED_DATA" = "true" ]; then
+		# Iterate through any CSV files in the /simulated-data directory and insert them into the database
+		for f in /simulated-data/*.csv; do
+			case "$f" in
+				*.csv)    echo "$0: inserting $f"; sqlcmd -S localhost -U sa -i /scripts/insert-simulated-data.sql -v csvFile="$f"; echo ;;
+				*)        echo "$0: ignoring $f" ;;
+			esac
+			echo
+		done
+	fi
 }
 
 ################################################################################
@@ -69,9 +78,10 @@ if [ ! -f "${MSSQL_BASE}/.docker-init-complete" ]; then
 
 	restore_database_backups
 
-	copy_simulation_scripts
-	
 	execute_startup_scripts
+
+	copy_simulation_scripts
+
 
     echo "Startup Complete."
 
