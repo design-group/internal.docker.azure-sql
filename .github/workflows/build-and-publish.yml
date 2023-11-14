@@ -7,7 +7,7 @@ on:
 	  - 'docker-bake.hcl'
 	  - '*.sh'
 	  - '*.sql'
-	  - sqlcmd/*.*
+	  - 'sqlcmd/*.*'
     branches:
     - master
   workflow_dispatch:
