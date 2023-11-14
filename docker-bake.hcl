@@ -1,5 +1,5 @@
 variable "BASE_IMAGE_NAME" {
-    default = "mssql-docker"
+    default = "mssql"
 }
 
 target "default" {
@@ -14,6 +14,6 @@ target "default" {
 		"linux/arm64"
  	]
 	tags = [
-		"ghcr.io/design-group/${BASE_IMAGE_NAME}:${version}"
+		"ghcr.io/design-group/mssql-docker/${BASE_IMAGE_NAME}:${version}"
 	]
 }

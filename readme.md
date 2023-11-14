@@ -1,4 +1,4 @@
-# ghcr.io/design-group/mssql-docker
+# ghcr.io/design-group/mssql-docker/mssql
 
 ## Design Group MSSQL Image
 
@@ -17,7 +17,7 @@ ___
 1. This docker image is uploaded to the github container registry, and can be pulled with the following:
 
 ```sh
-docker pull ghcr.io/design-group/mssql-docker:latest
+docker pull ghcr.io/design-group/mssql-docker/mssql:latest
 ```
 
 ___
@@ -47,7 +47,7 @@ ___
 ```yaml
 services:
   mssql:
-    image: ghcr.io/design-group/mssql-docker:latest
+    image: ghcr.io/design-group/mssql-docker/mssql:latest
     ports:
     - "1433:1433"
     environment:
