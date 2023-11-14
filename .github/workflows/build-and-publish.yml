@@ -22,8 +22,6 @@ env:
 
 jobs:
   build-and-push-images:
-    runs-on: docker-server
-
     permissions:
       contents: read
       packages: write
