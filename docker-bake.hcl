@@ -11,8 +11,7 @@ target "default" {
     dockerfile = "Dockerfile"
     platforms = [
 		"linux/amd64", 
-		"linux/arm64", 
-		"linux/arm/v7",
+		"linux/arm64"
  	]
 	tags = [
 		"ghcr.io/design-group/mssql-docker/${BASE_IMAGE_NAME}:${version}"
