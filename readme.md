@@ -15,6 +15,7 @@ ___
 1. The user must have a local personal access token to authenticate to the Github Repository. For details on how to authenticate to the Github Repository, see the [Github Documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic).
 
 1. This docker image is uploaded to the github container registry, and can be pulled with the following:
+
 ```sh
 docker pull ghcr.io/design-group/mssql-docker/mssql-docker:latest
 ```
@@ -38,22 +39,23 @@ This image also preloads the following environment variables by default:
 | `SA_PASSWORD` | `P@ssword1!` |
 | `MSSQL_PID` | `Developer` |
 | `INSERT_SIMULATED_DATA` | `false` |
+
 ___
 
 ### Example docker-compose file
 
 ```yaml
 services:
-	mssql:
-		image: ghcr.io/design-group/mssql-docker/mssql-docker:latest
-		ports:
-		- "1433:1433"
-		environment:
-		  INSERT_SIMULATED_DATA: "true"
-		volumes:
-		- ./simulated-data:/simulated-data
-		- ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-		- ./backups/my-database.bak:/backups/my-database.bak
+  mssql:
+    image: ghcr.io/design-group/mssql-docker/mssql-docker:latest
+    ports:
+    - "1433:1433"
+    environment:
+      INSERT_SIMULATED_DATA: "true"
+    volumes:
+    - ./simulated-data:/simulated-data
+    - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    - ./backups/my-database.bak:/backups/my-database.bak
 ```
 
 ___
