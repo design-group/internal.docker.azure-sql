@@ -62,7 +62,7 @@ MSSQL_BASE=${MSSQL_BASE:-/var/opt/mssql}
 if [ ! -f "${MSSQL_BASE}/.docker-init-complete" ]; then
     # Mark Initialization Complete
     mkdir -p "${MSSQL_BASE}"
-    touch "${MSSQL_BASE}/.docker-init-complete
+    touch "${MSSQL_BASE}/.docker-init-complete"
 
     # Initialize MSSQL before attempting database creation
     "$@" &
