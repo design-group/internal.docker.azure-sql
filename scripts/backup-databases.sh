@@ -21,7 +21,7 @@ for i in {1..60}; do
         break
     fi
     sleep 1
-    if [ $i -eq 60 ]; then
+    if [ "$i" -eq 60 ]; then
         echo "ERROR: SQL Server not ready after 60 seconds"
         exit 1
     fi

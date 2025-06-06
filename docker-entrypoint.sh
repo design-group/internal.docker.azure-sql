@@ -141,8 +141,11 @@ restore_bacpac_files() {
     for f in /backups/*.bacpac; do
         if [ -f "$f" ]; then
             ((bacpac_count++))
-            local database_name="$(basename "$f" .bacpac)"
-            local log_file="/tmp/restore_${database_name}.log"
+            local database_name
+            local log_file
+            
+            database_name="$(basename "$f" .bacpac)"
+            log_file="/tmp/restore_${database_name}.log"
             
             echo "$0: Starting restore of $f to database [$database_name]"
             
