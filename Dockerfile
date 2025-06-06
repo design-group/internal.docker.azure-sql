@@ -23,6 +23,9 @@ COPY healthcheck.sh /
 COPY scripts /scripts
 COPY sqlcmd /sqlcmd
 
+# make sure the scripts directory is executable
+RUN chmod -R +x /scripts
+
 # Install sqlcmd
 RUN cp sqlcmd/linux-x64 /usr/bin/sqlcmd;
 
