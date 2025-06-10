@@ -88,14 +88,14 @@ EXEC('RESTORE FILELISTONLY FROM DISK = ''' + @BackupFile + '''');
 
 -- Build restore command with file mapping
 DECLARE @DataFile NVARCHAR(128);
-DECLARE @LogFile NVARCHAR(128);
+DECLARE @LogFile renovations
 DECLARE @RestoreCmd NVARCHAR(MAX);
 
 SELECT @DataFile = LogicalName FROM #FileList WHERE Type = 'D' AND FileId = 1;
 SELECT @LogFile = LogicalName FROM #FileList WHERE Type = 'L';
 
 SET @RestoreCmd = 'RESTORE DATABASE [' + @DatabaseName + '] FROM DISK = ''' + @BackupFile + ''' WITH FILE = 1, ' +
-    'MOVE ''' + @DataFile + ''' TO ''/var/opt/mssql/data/' + @DatabaseName + '.mdf'', ' +
+    'MOVE ''' + @DataFile + ''' TO ''/var/opt/mssql/data/'ilibre
     'MOVE ''' + @LogFile + ''' TO ''/var/opt/mssql/data/' + @DatabaseName + '_log.ldf'', ' +
     'NOUNLOAD, REPLACE, STATS = 10';
 
@@ -130,14 +130,74 @@ EOF
     echo
 }
 
-
-# Restore .bacpac files - completely ignore login issues
+# Restore .bacpac files
 restore_bacpac_files() {
     local bacpac_count=0
     
-    echo "=== Restoring .bacpac files - IGNORING ALL LOGIN ISSUES ==="
+    echo "=== Restoring .bacpac files - Dynamic Login Handling ==="
     
-    # Process .bacpac files sequentially for better error handling
+    # Create generic app_user login
+    sqlcmd -S localhost -U sa -Q "
+    IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'app_user')
+        CREATE LOGIN [app_user] WITH PASSWORD = 'TempPassword123!', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF;" >> /tmp/login_creation.log 2>&1
+    
+    # Create extra logins from environment variable
+    create_extra_logins() {
+        if [ -n "$EXTRA_LOGINS" ]; then
+            echo "$EXTRA_LOGINS" | tr ',' '\n' | while read -r login; do
+                sqlcmd -S localhost -U sa -Q "
+                IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '$login')
+                BEGIN
+                    CREATE LOGIN [$login] WITH PASSWORD = 'TempPassword123!', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF;
+                    PRINT 'Created extra login: $login';
+                END" >> /tmp/login_creation.log 2>&1
+            done
+        fi
+    }
+    create_extra_logins
+    
+    # Extract and create logins from all .bacpac files
+    extract_and_create_logins() {
+        local login_file="/tmp/all_logins.txt"
+        rm -f "$login_file" 2>/dev/null
+        touch "$login_file"
+        
+        for f in /backups/*.bacpac; do
+            if [ -f "$f" ]; then
+                local temp_dir="/tmp/bacpac_extract_$$_$((bacpac_count++))"
+                mkdir -p "$temp_dir"
+                unzip -q "$f" model.xml -d "$temp_dir" 2>>/tmp/login_creation.log || { echo "$0: Failed to extract model.xml from $f" >> /tmp/login_creation.log; continue; }
+                if [ -f "$temp_dir/model.xml" ]; then
+                    grep -oP '<Element Type="SqlUser".*?Name="\K[^"]+' "$temp_dir/model.xml" | grep -v '[\\]' | sort -u >> "$login_file"
+                    rm -rf "$temp_dir"
+                else
+                    echo "$0: No model.xml found in $f" >> /tmp/login_creation.log
+                fi
+            fi
+        done
+        
+        if [ -s "$login_file" ]; then
+            while read -r login; do
+                sqlcmd -S localhost -U sa -Q "
+                IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = '$login')
+                BEGIN
+                    BEGIN TRY
+                        CREATE LOGIN [$login] WITH PASSWORD = 'TempPassword123!', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF;
+                        PRINT 'Created login: $login';
+                    END TRY
+                    BEGIN CATCH
+                        PRINT 'Failed to create login $login: ' + ERROR_MESSAGE();
+                    END CATCH
+                END" >> /tmp/login_creation.log 2>&1
+            done
+        else
+            echo "$0: No SQL logins found in .bacpac files" >> /tmp/login_creation.log
+        fi
+    }
+    extract_and_create_logins
+    
+    bacpac_count=0  # Reset counter for restore loop
+    # Process .bacpac files sequentially
     for f in /backups/*.bacpac; do
         if [ -f "$f" ]; then
             ((bacpac_count++))
@@ -147,91 +207,57 @@ restore_bacpac_files() {
             database_name="$(basename "$f" .bacpac)"
             log_file="/tmp/restore_${database_name}.log"
             
-            echo "$0: Starting restore of $f to database [$database_name]"
+            echo "$0: Starting restore of $f to database [$database_name]" | tee -a "$log_file"
             
-            # Pre-create common logins that might be needed
-            echo "$0: Pre-creating common logins for [$database_name]..."
-            sqlcmd -S localhost -U sa -Q "
-            DECLARE @logins TABLE (name NVARCHAR(128));
-            INSERT INTO @logins VALUES ('Ignition'), ('Sepasoft'), ('Liquibase');
-            
-            DECLARE @login NVARCHAR(128);
-            DECLARE login_cursor CURSOR FOR SELECT name FROM @logins;
-            OPEN login_cursor;
-            FETCH NEXT FROM login_cursor INTO @login;
-            
-            WHILE @@FETCH_STATUS = 0
-            BEGIN
-                IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = @login)
-                BEGIN
-                    BEGIN TRY
-                        DECLARE @sql NVARCHAR(MAX) = 'CREATE LOGIN [' + @login + '] WITH PASSWORD = ''TempPassword123!'', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF';
-                        EXEC sp_executesql @sql;
-                        PRINT 'Created login: ' + @login;
-                    END TRY
-                    BEGIN CATCH
-                        PRINT 'Failed to create login ' + @login + ': ' + ERROR_MESSAGE();
-                    END CATCH
-                END
-                ELSE
-                BEGIN
-                    PRINT 'Login already exists: ' + @login;
-                END
-                FETCH NEXT FROM login_cursor INTO @login;
-            END
-            
-            CLOSE login_cursor;
-            DEALLOCATE login_cursor;" 2>/dev/null || true
-            
-            # Drop existing database if it exists
+            # Drop existing database
             sqlcmd -S localhost -U sa -Q "
             IF EXISTS (SELECT 1 FROM sys.databases WHERE name = '$database_name')
             BEGIN
-                PRINT 'Dropping existing database [$database_name]';
                 ALTER DATABASE [$database_name] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
                 DROP DATABASE [$database_name];
-            END" 2>/dev/null || true
+            END" >> "$log_file" 2>&1
             
-            # Try restore with comprehensive login/security ignoring
-            echo "$0: Attempting sqlpackage restore for [$database_name]..."
+            # Restore with sqlpackage
+            echo "$0: Attempting sqlpackage restore for [$database_name]..." | tee -a "$log_file"
+            for attempt in {1..3}; do
+                if sqlpackage /Action:Import \
+                    /SourceFile:"$f" \
+                    /TargetServerName:localhost \
+                    /TargetDatabaseName:"$database_name" \
+                    /TargetUser:sa \
+                    /TargetPassword:"${SA_PASSWORD}" \
+                    /TargetTrustServerCertificate:True \
+                    /Diagnostics:True \
+                    /DiagnosticsFile:/tmp/sqlpackage_diagnostics.log \
+                    /p:CommandTimeout=300 \
+                    /p:LongRunningCommandTimeout=0 \
+                    /p:HashObjectNamesInLogs=True \
+                    >> "$log_file" 2>&1; then
+                    echo "$0: sqlpackage completed for [$database_name]" | tee -a "$log_file"
+                    break
+                else
+                    echo "$0: Retry $attempt failed for [$database_name]" >> "$log_file"
+                    sleep 5
+                fi
+            done
             
-            # Use only valid properties for Import action - try basic restore first
-            if sqlpackage /Action:Import \
-                /SourceFile:"$f" \
-                /TargetServerName:localhost \
-                /TargetDatabaseName:"$database_name" \
-                /TargetUser:sa \
-                /TargetPassword:"${SA_PASSWORD}" \
-                /TargetTrustServerCertificate:True \
-                /Properties:CommandTimeout=300 \
-                > "$log_file" 2>&1; then
+            # Check database existence
+            sleep 2
+            if sqlcmd -S localhost -U sa -Q "SELECT name FROM sys.databases WHERE name = '$database_name'" 2>>"$log_file" | grep -q "$database_name"; then
+                echo "$0: ✓ Successfully restored $f - database [$database_name] exists and is accessible" | tee -a "$log_file"
                 
-                echo "$0: sqlpackage completed for [$database_name]"
-            else
-                echo "$0: sqlpackage had errors for [$database_name], checking if database was created..."
-            fi
-            
-            # Check if database was actually created regardless of sqlpackage exit code
-            sleep 2  # Give SQL Server a moment to complete any pending operations
-            
-            if sqlcmd -S localhost -U sa -Q "SELECT name FROM sys.databases WHERE name = '$database_name'" 2>/dev/null | grep -q "$database_name"; then
-                echo "$0: ✓ Successfully restored $f - database [$database_name] exists and is accessible"
-                
-                # Try to fix any orphaned users by mapping them to existing logins or creating simple ones
-                echo "$0: Fixing orphaned users in [$database_name]..."
+                # Map orphaned users to app_user or drop problematic users
+                echo "$0: Mapping orphaned users to app_user in [$database_name]..." | tee -a "$log_file"
                 sqlcmd -S localhost -U sa -d "$database_name" -Q "
                 DECLARE @sql NVARCHAR(MAX) = '';
                 DECLARE @username NVARCHAR(128);
                 
-                -- Create logins for orphaned users
                 DECLARE user_cursor CURSOR FOR
-                SELECT dp.name
-                FROM sys.database_principals dp
-                LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
-                WHERE dp.type IN ('S', 'U') 
-                  AND dp.principal_id > 4 
-                  AND sp.sid IS NULL
-                  AND dp.name NOT IN ('guest', 'INFORMATION_SCHEMA', 'sys');
+                SELECT name FROM sys.database_principals
+                WHERE type IN ('S', 'U')
+                  AND principal_id > 4
+                  AND name NOT IN ('guest', 'INFORMATION_SCHEMA', 'sys')
+                  AND sid NOT IN (SELECT sid FROM master.sys.server_principals);
                 
                 OPEN user_cursor;
                 FETCH NEXT FROM user_cursor INTO @username;
@@ -239,38 +265,37 @@ restore_bacpac_files() {
                 WHILE @@FETCH_STATUS = 0
                 BEGIN
                     BEGIN TRY
-                        -- Try to create login if it doesn't exist
-                        IF NOT EXISTS (SELECT 1 FROM master.sys.server_principals WHERE name = @username)
-                        BEGIN
-                            SET @sql = 'CREATE LOGIN [' + @username + '] WITH PASSWORD = ''TempPassword123!'', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF';
-                            EXEC sp_executesql @sql;
-                            PRINT 'Created login for: ' + @username;
-                        END
-                        
-                        -- Try to fix the user mapping
-                        SET @sql = 'ALTER USER [' + @username + '] WITH LOGIN = [' + @username + ']';
+                        SET @sql = 'ALTER USER [' + @username + '] WITH LOGIN = [app_user]';
                         EXEC sp_executesql @sql;
-                        PRINT 'Fixed user mapping for: ' + @username;
+                        PRINT 'Mapped user: ' + @username + ' to app_user';
                     END TRY
                     BEGIN CATCH
-                        PRINT 'Could not fix user: ' + @username + ' - ' + ERROR_MESSAGE();
+                        PRINT 'Could not map user: ' + @username + ' - ' + ERROR_MESSAGE();
+                        -- Drop user if mapping fails (e.g., Windows user)
+                        BEGIN TRY
+                            SET @sql = 'DROP USER [' + @username + ']';
+                            EXEC sp_executesql @sql;
+                            PRINT 'Dropped problematic user: ' + @username;
+                        END TRY
+                        BEGIN CATCH
+                            PRINT 'Could not drop user: ' + @username + ' - ' + ERROR_MESSAGE();
+                        END CATCH
                     END CATCH
-                    
                     FETCH NEXT FROM user_cursor INTO @username;
                 END
                 
                 CLOSE user_cursor;
-                DEALLOCATE user_cursor;" 2>/dev/null || true
+                DEALLOCATE user_cursor;" >> "$log_file" 2>&1
                 
-                rm -f "$log_file"
+                rm -f "$log_file" 2>/dev/null
             else
-                echo "$0: ✗ ERROR - Failed to restore $f - database [$database_name] was not created"
-                echo "$0: sqlpackage error details:"
+                echo "$0: ✗ ERROR - Failed to restore $f - database [$database_name] was not created" | tee -a "$log_file"
+                echo "$0: sqlpackage error details:" | tee -a "$log_file"
                 if [ -f "$log_file" ]; then
-                    tail -30 "$log_file"
-                    echo "--- Full log saved at: $log_file ---"
+                    tail -30 "$log_file" | tee -a "$log_file"
+                    echo "--- Full log saved at: $log_file ---" | tee -a "$log_file"
                 else
-                    echo "No log file found"
+                    echo "No log file found" | tee -a "$log_file"
                 fi
             fi
             echo
@@ -281,10 +306,9 @@ restore_bacpac_files() {
         echo "$0: No .bacpac files found in /backups"
     else
         echo "$0: Processed $bacpac_count .bacpac file(s)"
-        
-        # Show final database list
         echo "$0: Final database list:"
-        sqlcmd -S localhost -U sa -Q "SELECT name, create_date, state_desc FROM sys.databases WHERE database_id > 4 ORDER BY name" 2>/dev/null || true
+        sqlcmd -S localhost -U sa -Q "SELECT name, create_date, state_desc FROM sys.databases WHERE database_id > 4 ORDER BY name" >> /tmp/database_list.log 2>&1 || true
+        cat /tmp/database_list.log
     fi
     echo
 }
@@ -295,10 +319,10 @@ restore_database_backups() {
     echo "Backup directory: /backups"
     echo
     
-    # First, restore all .bak files (these work fine)
+    # First, restore all .bak files
     restore_bak_files
     
-    # Then, restore all .bacpac files (with comprehensive login ignoring)
+    # Then, restore all .bacpac files
     restore_bacpac_files
     
     echo "=== Database Restore Process Complete ==="
@@ -334,7 +358,7 @@ if [ ! -f "${MSSQL_BASE}/.docker-init-complete" ]; then
         exit 1
     fi
 
-    # Restore database backups (.bak first, then .bacpac in parallel)
+    # Restore database backups (.bak first, then .bacpac)
     restore_database_backups
 
     # Execute startup scripts

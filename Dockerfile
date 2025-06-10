@@ -35,8 +35,7 @@ RUN echo "Downloading sqlpackage for Linux..." && \
     unzip -q /tmp/sqlpackage.zip -d /opt/sqlpackage && \
     chmod +x /opt/sqlpackage/sqlpackage && \
     echo "Verifying sqlpackage installation:" && \
-    file /opt/sqlpackage/sqlpackage && \
-    ls -la /opt/sqlpackage/sqlpackage && \
+    /opt/sqlpackage/sqlpackage /version && \
     rm /tmp/sqlpackage.zip && \
     echo "sqlpackage installation complete"
 
