@@ -1,4 +1,4 @@
-# ghcr.io/design-group/mssql-docker
+# ghcr.io/design-group/azure-sql
 
 ## Design Group MSSQL Image
 
@@ -8,6 +8,12 @@ This image is automatically built for the latest `azure-sql-edge` version on bot
 
 If using a windows device, you will want to [Set up WSL](https://github.com/design-group/ignition-docker/blob/master/docs/setting-up-wsl.md)
 
+### What This Container Does
+
+This container automatically handles:
+- **Database Restoration**: Automatically restores `.bak` and `.bacpac` files on startup
+- **Backup Creation**: Provides scripts to backup databases to `.bak` files
+- **Development Setup**: Includes optional simulated data insertion for testing
 ___
 
 ## Getting the Docker Image
@@ -17,7 +23,7 @@ ___
 1. This docker image is uploaded to the github container registry, and can be pulled with the following:
 
 ```sh
-docker pull ghcr.io/design-group/mssql-docker:latest
+docker pull ghcr.io/design-group/azure-sql:latest
 ```
 
 ___
@@ -26,49 +32,218 @@ ___
 
 This is a derived image of the microsoft `azure-sql-edge` image. Please see the [Azure SQL Edge Docker Hub](https://hub.docker.com/_/microsoft-azure-sql-edge?tab=description) for more information on the base image. This image should be able to take all arguments provided by the base image, but has not been tested.
 
-### Backup and Restore Functionality
 
-This image includes built-in backup and restore capabilities for both `.bak` and `.bacpac` files:
 
-#### Creating Backups
-
-Use the backup script to create database backups:
+### Quick Start
 
 ```bash
-# Backup all databases to .bak files
-docker exec your-container-name bash /scripts/backup-databases.sh
+# Pull the image
+docker pull ghcr.io/design-group/azure-sql:latest
 
-# Backup specific databases
-docker exec -e EXPORT_DATABASES=SAP,My_Site_Data,MyData your-container-name bash /scripts/backup-databases.sh
-
-# Save backups to host directory
-docker exec -e BACKUP_EXPORT_DIR=/backups -v ./backups:/backups your-container-name bash /scripts/backup-databases.sh
+# Run with basic setup
+docker run -d \
+  -p 1433:1433 \
+  -e SA_PASSWORD="YourStrong!Passw0rd" \
+  ghcr.io/design-group/azure-sql:latest
 ```
 
-#### Restoring .bak Files
-
-**Automatic restore during startup:**
-
-Any `.bak` files placed in the `/backups` directory of the container will be automatically restored during container startup. The database will be created with the same name as the backup file (without the `.bak` extension).
+### Using Docker Compose
 
 ```yaml
 services:
   mssql:
-    image: ghcr.io/design-group/mssql-docker:latest
-    volumes:
-      - ./backups/my-database.bak:/backups/my-database.bak
-      - ./backups/SAP.bak:/backups/SAP.bak
+    image: ghcr.io/design-group/azure-sql:latest
+    ports:
+      - "1433:1433"
     environment:
-      - RESTORE_DATABASES=my-database,SAP  # Optional: specify which to restore
+      SA_PASSWORD: "YourStrong!Passw0rd"
+    volumes:
+      - ./backups:/backups  # Auto-restore any .bak/.bacpac files here
 ```
 
-**Example:** A file named `MyData.bak` will be restored as database `MyData`.
+### Environment Variables
 
-**Manual restore:**
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SA_PASSWORD` | `P@ssword1!` | SQL Server SA account password |
+| `ACCEPT_EULA` | `Y` | Accept SQL Server EULA |
+| `MSSQL_PID` | `Developer` | SQL Server edition |
+| `INSERT_SIMULATED_DATA` | `false` | Enable automatic test data insertion |
+| `MSSQL_STARTUP_DELAY` | `60` | Seconds to wait for SQL Server startup |
+
+### Available Scripts
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `/scripts/backup-databases.sh` | Backup databases to `.bak` files | `docker exec container-name bash /scripts/backup-databases.sh` |
+
+### Automatic Database Restoration
+
+The container automatically restores any backup files found in the `/backups` directory during startup.
+
+#### Restoring .bak Files (SQL Server Native Backups)
+
+**Automatic restore during startup:**
+
+Any `.bak` files placed in the `/backups` directory will be automatically restored. The database will be created with the same name as the backup file (without the `.bak` extension).
+
+```yaml
+services:
+  mssql:
+    image: ghcr.io/design-group/azure-sql:latest
+    volumes:
+      - ./my-backups/MyDatabase.bak:/backups/MyDatabase.bak
+      - ./my-backups/CustomerDB.bak:/backups/CustomerDB.bak
+    environment:
+      SA_PASSWORD: "YourStrong!Passw0rd"
+```
+
+**Example:** A file named `MyDatabase.bak` will be restored as database `MyDatabase`.
+
+#### Restoring .bacpac Files (Cross-Platform Exports)
+
+**Automatic restore during startup:**
+
+Any `.bacpac` files in `/backups` will be automatically imported. The database name matches the filename (without `.bacpac` extension).
+
+```yaml
+services:
+  mssql:
+    image: ghcr.io/design-group/azure-sql:latest
+    volumes:
+      - ./exports/Northwind.bacpac:/backups/Northwind.bacpac
+      - ./exports/AdventureWorks.bacpac:/backups/AdventureWorks.bacpac
+```
+
+**Example:** A file named `Northwind.bacpac` will be imported as database `Northwind`.
+
+**Note about .bacpac user handling:** The container automatically creates an `app_user` login and maps orphaned database users to this login, ensuring the restored database is accessible.
+
+### Initialization Hooks
+
+The container supports automatic execution of custom scripts during startup:
+
+#### SQL Initialization Scripts
+
+Place `.sql` files in `/docker-entrypoint-initdb.d/` for automatic execution:
+
+```yaml
+services:
+  mssql:
+    image: ghcr.io/design-group/azure-sql:latest
+    volumes:
+      - ./init-scripts/01-create-tables.sql:/docker-entrypoint-initdb.d/01-create-tables.sql
+      - ./init-scripts/02-seed-data.sql:/docker-entrypoint-initdb.d/02-seed-data.sql
+```
+
+Scripts are executed in alphabetical order after database restoration.
+
+#### Simulated Data for Testing
+
+Enable automatic test data insertion for development:
+
+```yaml
+services:
+  mssql:
+    image: ghcr.io/design-group/azure-sql:latest
+    environment:
+      INSERT_SIMULATED_DATA: "true"
+    volumes:
+      - ./test-data:/simulated-data
+```
+
+Place `.sql` files in the `/simulated-data` directory. These execute after initialization scripts and are intended for test data insertion.
+
+### Creating Backups
 
 ```bash
-# Restore a .bak file
-docker exec your-container-name sqlcmd -S localhost -U sa -Q "
+# Backup all databases
+docker exec your-container bash /scripts/backup-databases.sh
+
+# Backup specific databases
+docker exec -e EXPORT_DATABASES=Database1,Database2 your-container bash /scripts/backup-databases.sh
+```
+
+---
+
+## Developer Documentation
+
+### Authentication Setup
+
+You'll need a GitHub personal access token to pull this image. See the [GitHub Documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-with-a-personal-access-token-classic) for setup instructions.
+
+### Advanced Configuration
+
+#### Execution Order
+
+The container executes scripts in this order during startup:
+
+1. **Database Restoration**: `.bak` and `.bacpac` files from `/backups`
+2. **Initialization Scripts**: `.sql` and `.sh` files from `/docker-entrypoint-initdb.d` (alphabetical order)
+3. **Simulated Data**: `.sql` files from `/simulated-data` (only if `INSERT_SIMULATED_DATA=true`)
+
+#### Advanced Initialization Example
+
+```yaml
+services:
+  mssql:
+    image: ghcr.io/design-group/azure-sql:latest
+    environment:
+      SA_PASSWORD: "YourStrong!Passw0rd"
+      INSERT_SIMULATED_DATA: "true"
+    volumes:
+      # 1. Restore these databases first
+      - ./backups/ProductionDB.bak:/backups/ProductionDB.bak
+      - ./backups/UserDB.bacpac:/backups/UserDB.bacpac
+      
+      # 2. Then run initialization scripts
+      - ./scripts/01-create-views.sql:/docker-entrypoint-initdb.d/01-create-views.sql
+      - ./scripts/02-create-procedures.sql:/docker-entrypoint-initdb.d/02-create-procedures.sql
+      - ./scripts/setup-permissions.sh:/docker-entrypoint-initdb.d/setup-permissions.sh
+      
+      # 3. Finally insert test data
+      - ./test-data/sample-customers.sql:/simulated-data/sample-customers.sql
+      - ./test-data/sample-orders.sql:/simulated-data/sample-orders.sql
+```
+
+### Detailed Backup & Restore
+
+#### Backup Script Environment Variables
+
+The backup script (`/scripts/backup-databases.sh`) supports these environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKUP_EXPORT_DIR` | `/backups` | Directory to save backup files |
+| `EXPORT_DATABASES` | *(all user databases)* | Comma-separated list of databases to backup |
+| `SA_PASSWORD` | `P@ssword1!` | SA password for database connection |
+
+#### Backup Examples
+
+```bash
+# Backup to custom directory
+docker exec -e BACKUP_EXPORT_DIR=/custom/path container bash /scripts/backup-databases.sh
+
+# Backup only specific databases
+docker exec -e EXPORT_DATABASES=SAP,CustomerDB container bash /scripts/backup-databases.sh
+
+# Backup with custom password
+docker exec -e SA_PASSWORD=CustomPassword container bash /scripts/backup-databases.sh
+```
+
+#### Restore Process Details
+
+**`.bak` files (Recommended for development):**
+- Faster and more reliable restoration
+- Preserve all permissions, users, and database settings
+- Support for differential and transaction log backups
+- Better compression and smaller file sizes
+- Database name matches filename (without `.bak` extension)
+- Automatic logical file remapping to container paths
+
+**Manual `.bak` restore example:**
+```bash
+docker exec container sqlcmd -S localhost -U sa -Q "
 RESTORE DATABASE [NewDatabaseName] 
 FROM DISK = '/backups/my-database.bak' 
 WITH MOVE 'LogicalDataName' TO '/var/opt/mssql/data/NewDatabaseName.mdf',
@@ -76,135 +251,201 @@ WITH MOVE 'LogicalDataName' TO '/var/opt/mssql/data/NewDatabaseName.mdf',
      REPLACE"
 ```
 
-#### Restoring .bacpac Files
+**`.bacpac` files (Cross-platform compatibility):**
+- Cross-platform database migrations
+- Compatible with Azure SQL Database
+- Schema and data export/import (no permissions/users)
+- Database name matches filename (without `.bacpac` extension)
+- Automatic orphaned user resolution via `app_user` mapping
+- Uses `sqlpackage` for import process
 
-**Automatic restore during startup:**
-
-Any `.bacpac` files placed in the `/backups` directory will be automatically imported during container startup. The database will be created with the same name as the backup file (without the `.bacpac` extension).
-
-**Example:** A file named `CustomerDB.bacpac` will be imported as database `CustomerDB`.
-
-**Manual import using installed sqlpackage:**
-
+**Manual `.bacpac` import example:**
 ```bash
-# Import a .bacpac file
-docker exec your-container-name sqlpackage /Action:Import \
+docker exec container sqlpackage /Action:Import \
   /SourceFile:"/backups/database.bacpac" \
   /TargetServerName:localhost \
   /TargetDatabaseName:RestoredDatabase \
   /TargetUser:sa \
-  /TargetPassword:"${SA_PASSWORD}"
+  /TargetPassword:"${SA_PASSWORD}" \
+  /TargetTrustServerCertificate:True
 ```
 
-**Note:** 
+#### User Management for .bacpac Files
 
-`.bak` files are recommended for local development as they:
+When importing `.bacpac` files, the container automatically:
 
-- Restore faster and more reliably
-- Preserve all permissions, users, and database settings
-- Support incremental backups (differential, transaction log)
-- Have better compression and smaller file sizes
+1. **Extracts user information** from the `.bacpac` model.xml
+2. **Creates server logins** for database users (using SA_PASSWORD)
+3. **Maps orphaned users** to `app_user` login if mapping fails
+4. **Handles login conflicts** gracefully with error logging
 
-`.bacpac` files are useful for:
+This ensures imported databases are immediately accessible without manual user configuration.
 
-- Cross-platform database migrations
-- Importing to Azure SQL Database
-- Sharing database schema and data without SQL Server dependencies
-
-### Backup Script
-
-The image includes a backup script at `/scripts/backup-databases.sh` with the following environment variables:
-
-| Environment Variable | Default | Description |
-| --- | --- | --- |
-| `BACKUP_EXPORT_DIR` | `/backups` | Directory to save backup files |
-| `EXPORT_DATABASES` | *(all user databases)* | Comma-separated list of databases to backup |
-| `SA_PASSWORD` | `P@ssword1!` | SA password for database connection |
-
-### Simulated Data Insertion
-
-This image will automatically insert simulated data into the database if the `INSERT_SIMULATED_DATA` environment variable is set to `true`. This is useful for testing purposes, but should not be used in production. To make these files available to the image, you can mount a volume to `/simulated-data`. The files should be in the `.sql` format and contain any necessary `INSERT` statements. The files will be executed in alphabetical order.
-
-### Environment Variables
-
-This image also preloads the following environment variables by default:
-
-| Environment Variable | Value |
-| --- | --- |
-| `ACCEPT_EULA` | `Y` |
-| `SA_PASSWORD` | `P@ssword1!` |
-| `MSSQL_PID` | `Developer` |
-| `INSERT_SIMULATED_DATA` | `false` |
-
-___
-
-### Example docker-compose file
-
-```yaml
-services:
-  mssql:
-    image: ghcr.io/design-group/mssql-docker:latest
-    ports:
-    - "1433:1433"
-    environment:
-      INSERT_SIMULATED_DATA: "true"
-      SA_PASSWORD: "YourStrong!Passw0rd"
-    volumes:
-    - ./simulated-data:/simulated-data
-    - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
-    - ./backups:/backups  # Mount directory for backup files
-```
-
-### Complete Backup and Restore Workflow
+### Complete Development Workflow
 
 ```bash
-# 1. Start your container
+# 1. Prepare your backup files and scripts
+mkdir -p backups init-scripts test-data
+
+# Copy your .bak/.bacpac files
+cp MyDatabase.bak backups/
+cp Northwind.bacpac backups/
+
+# Create initialization scripts
+echo "CREATE VIEW ActiveCustomers AS SELECT * FROM Customers WHERE Active = 1" > init-scripts/01-views.sql
+
+# Create test data scripts (optional)
+echo "INSERT INTO Customers (Name) VALUES ('Test Customer')" > test-data/sample-data.sql
+
+# 2. Start container with mounted volumes
 docker-compose up -d
 
-# 2. Create backups of all databases
-docker exec your-mssql-container bash /scripts/backup-databases.sh
+# 3. Container automatically:
+#    - Restores MyDatabase.bak as "MyDatabase"
+#    - Imports Northwind.bacpac as "Northwind"  
+#    - Runs init-scripts/01-views.sql
+#    - Runs test-data/sample-data.sql (if INSERT_SIMULATED_DATA=true)
 
-# 3. Backup files will be available in ./backups/
+# 4. Work with your databases...
+docker exec container sqlcmd -S localhost -U sa -Q "SELECT name FROM sys.databases"
+
+# 5. Create backups of current state
+docker exec container bash /scripts/backup-databases.sh
+
+# 6. Backup files are timestamped in ./backups/
 ls -la ./backups/
-# Enterprise_20250606_123456.bak
-# SAP_20250606_123456.bak
-# My_Site_Data_20250606_123456.bak
-# MyData_20250606_123456.bak
+# MyDatabase_20250606_123456.bak
+# Northwind_20250606_123456.bak
 
-# 4. To restore in a new container, rename files if needed and mount them
-# Files are automatically restored with the filename as the database name
-mv Enterprise_20250606_123456.bak Enterprise.bak
-mv SAP_20250606_123456.bak SAP.bak
+# 7. For reproducible environments, rename to remove timestamp
+mv MyDatabase_20250606_123456.bak MyDatabase.bak
+mv Northwind_20250606_123456.bak Northwind.bak
 
-# 5. Mount backup files - they'll be automatically restored on startup
-# Database names will match the filenames (without extension)
+# 8. Next container startup will restore the exact same state
 ```
 
-### Advanced Backup Options
+### Real-World Examples
 
-The backup script supports additional customization:
+#### Production Database Migration
+
+```yaml
+# Migrate production .bak files to development
+services:
+  mssql:
+    image: ghcr.io/design-group/azure-sql:latest
+    environment:
+      SA_PASSWORD: "DevPassword123!"
+    volumes:
+      - ./production-backups/CustomerDB.bak:/backups/CustomerDB.bak
+      - ./production-backups/OrderDB.bak:/backups/OrderDB.bak
+      - ./dev-scripts/mask-sensitive-data.sql:/docker-entrypoint-initdb.d/mask-data.sql
+```
+
+#### Azure SQL Database Import
+
+```yaml
+# Import .bacpac files from Azure
+services:
+  mssql:
+    image: ghcr.io/design-group/azure-sql:latest
+    environment:
+      SA_PASSWORD: "LocalDev123!"
+    volumes:
+      - ./azure-exports/WebApp.bacpac:/backups/WebApp.bacpac
+      - ./azure-exports/Analytics.bacpac:/backups/Analytics.bacpac
+```
+
+#### Testing Environment with Sample Data
+
+```yaml
+# Development with automatic test data
+services:
+  mssql:
+    image: ghcr.io/design-group/azure-sql:latest
+    environment:
+      SA_PASSWORD: "TestPassword123!"
+      INSERT_SIMULATED_DATA: "true"
+    volumes:
+      - ./schemas/EmptyDB.bak:/backups/EmptyDB.bak
+      - ./test-data/customers.sql:/simulated-data/01-customers.sql
+      - ./test-data/orders.sql:/simulated-data/02-orders.sql
+      - ./test-data/products.sql:/simulated-data/03-products.sql
+```
+
+### Included Tools
+
+The container includes these pre-installed tools:
+- `sqlcmd` - SQL Server command-line utility
+- `sqlpackage` - Database deployment and export utility
+- Standard shell utilities for scripting
+
+### Network Configuration
+
+For use with reverse proxies (like Traefik), the container includes labels for automatic service discovery:
+
+```yaml
+labels:
+  traefik.enable: true
+  traefik.hostname: azure-sql-db
+  traefik.tcp.routers.azure-sql-db.entrypoints: "azure-sql"
+  traefik.tcp.routers.azure-sql-db.rule: "HostSNI(`*`)"
+  traefik.tcp.services.azure-sql-db-svc.loadbalancer.server.port: 1433
+```
+
+### Health Checks
+
+The container includes a built-in health check that verifies SQL Server connectivity:
 
 ```bash
-# Backup with custom export directory
-docker exec -e BACKUP_EXPORT_DIR=/custom/path your-container bash /scripts/backup-databases.sh
+# Check container health
+docker ps  # Shows health status
 
-# Backup only specific databases
-docker exec -e EXPORT_DATABASES=Database1,Database2 your-container bash /scripts/backup-databases.sh
-
-# Use custom SA password
-docker exec -e SA_PASSWORD=CustomPassword your-container bash /scripts/backup-databases.sh
+# Manual health check
+docker exec container /healthcheck.sh
 ```
 
-___
+### Troubleshooting
+
+**Common Issues:**
+
+1. **Container fails to start**: Check that `SA_PASSWORD` meets complexity requirements
+2. **Backup files not restored**: Ensure files are in `/backups` and have correct extensions
+3. **Permission errors**: Verify file ownership and container user permissions
+4. **Slow startup**: Increase `MSSQL_STARTUP_DELAY` for large backup files
+
+**Debug logs:**
+```bash
+# View container logs
+docker logs container-name
+
+# View backup process logs
+docker exec container cat /tmp/login_creation.log
+
+# View restore process logs
+docker exec container ls -la /tmp/restore_*.log
+```
 
 ### Contributing
 
-This repository uses [pre-commit](https://pre-commit.com/) to enforce code style. To install the pre-commit hooks, run `pre-commit install` from the root of the repository. This will run the hooks on every commit. If you would like to run the hooks manually, run `pre-commit run --all-files` from the root of the repository.
+This repository uses [pre-commit](https://pre-commit.com/) for code quality enforcement:
 
-### Requests
+```bash
+# Install pre-commit hooks
+pre-commit install
 
-If you have any requests for additional features, please feel free to [open an issue](https://github.com/design-group/mssql-docker/issues/new/choose) or submit a pull request.
+# Run hooks manually
+pre-commit run --all-files
+```
 
-### Shoutout
+### Support
 
-A big shoutout to [Kevin Collins](https://github.com/thirdgen88) for the original inspiration and support for building this image.
+- [Open an issue](https://github.com/design-group/azure-sql/issues/new/choose) for bugs or feature requests
+- Submit pull requests for contributions
+
+### License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+### Acknowledgments
+
+Special thanks to [Kevin Collins](https://github.com/thirdgen88) for the original inspiration and support for building this image.
