@@ -8,8 +8,6 @@ services:
       - ./test/fixtures:/backups
       - ./test/fixtures/simulated-data:/simulated-data
       - ./test/integration:/test-scripts
-      # Persistent data for development
-      - mssql-test-data:/var/opt/mssql
     environment:
       SA_PASSWORD: ${SA_PASSWORD:-} 
     healthcheck:
@@ -29,9 +27,6 @@ services:
     networks:
       - default
       - proxy
-
-volumes:
-  mssql-test-data:
 
 networks:
     default:

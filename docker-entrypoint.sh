@@ -226,6 +226,10 @@ restore_bacpac_files() {
             echo "$0: Starting restore of $f to database [$database_name]" | tee -a "$log_file"
             echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting restore of $f to database [$database_name]" >> /tmp/login_creation.log
             
+            # Get file size for progress estimation
+            file_size=$(du -h "$f" | cut -f1)
+            echo "$0: File size: $file_size" | tee -a "$log_file"
+            
             # Drop existing database if it exists
             sqlcmd -S localhost -U sa -Q "
             IF EXISTS (SELECT 1 FROM sys.databases WHERE name = '$database_name')
@@ -235,7 +239,15 @@ restore_bacpac_files() {
             END" >> "$log_file" 2>&1
             
             echo "$0: Attempting sqlpackage restore for [$database_name]..." | tee -a "$log_file"
+            
+            # Start progress monitoring in background
+            monitor_import_progress "$database_name" &
+            local monitor_pid=$!
+            
+            # Start the import with CORRECT sqlpackage arguments
             for attempt in {1..3}; do
+                echo "$0: Import attempt $attempt for [$database_name]..." | tee -a "$log_file"
+                
                 if sqlpackage /Action:Import \
                     /SourceFile:"$f" \
                     /TargetServerName:localhost \
@@ -244,10 +256,9 @@ restore_bacpac_files() {
                     /TargetPassword:"${SA_PASSWORD}" \
                     /TargetTrustServerCertificate:True \
                     /Diagnostics:True \
-                    /DiagnosticsFile:/tmp/sqlpackage_diagnostics.log \
+                    /DiagnosticsFile:"/tmp/sqlpackage_diagnostics_${database_name}.log" \
                     /p:CommandTimeout=300 \
                     /p:LongRunningCommandTimeout=0 \
-                    /p:HashObjectNamesInLogs=True \
                     >> "$log_file" 2>&1; then
                     echo "$0: sqlpackage completed for [$database_name]" | tee -a "$log_file"
                     break
@@ -256,6 +267,10 @@ restore_bacpac_files() {
                     sleep 5
                 fi
             done
+            
+            # Stop progress monitoring
+            kill $monitor_pid 2>/dev/null || true
+            wait $monitor_pid 2>/dev/null || true
             
             sleep 2
             if sqlcmd -S localhost -U sa -Q "SELECT name FROM sys.databases WHERE name = '$database_name'" 2>>"$log_file" | grep -q "$database_name"; then
@@ -313,6 +328,7 @@ EOF
                 sqlcmd -S localhost -U sa -i "$user_mapping_sql" >> "$log_file" 2>&1
                 rm -f "$user_mapping_sql"
                 
+                # Clean up log files after successful restore
                 rm -f "$log_file" 2>/dev/null
             else
                 echo "$0: ✗ Failed to restore $f - database [$database_name] was not created" | tee -a "$log_file"
@@ -337,6 +353,38 @@ EOF
         cat /tmp/database_list.log 2>/dev/null || echo "Could not retrieve database list"
     fi
     echo
+}
+
+# Simplified progress monitoring function
+monitor_import_progress() {
+    local database_name="$1"
+    local start_time=$(date +%s)
+    
+    while true; do
+        sleep 15
+        
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        local elapsed_min=$((elapsed / 60))
+        local elapsed_sec=$((elapsed % 60))
+        
+        # Check if database exists
+        local db_status=$(sqlcmd -S localhost -U sa -h -1 -Q "SELECT ISNULL((SELECT state_desc FROM sys.databases WHERE name = '$database_name'), 'NOT_FOUND')" 2>/dev/null | tr -d ' \r\n' | tail -1)
+        
+        echo "$(date '+%H:%M:%S') - [${elapsed_min}m${elapsed_sec}s] Database: $database_name | Status: $db_status"
+        
+        # Break if database is online
+        if [ "$db_status" = "ONLINE" ]; then
+            echo "$(date '+%H:%M:%S') - Database $database_name is now ONLINE!"
+            break
+        fi
+        
+        # Safety break after 15 minutes
+        if [ $elapsed -gt 900 ]; then
+            echo "$(date '+%H:%M:%S') - Progress monitor timeout for $database_name"
+            break
+        fi
+    done
 }
 
 # Main restore function that handles both .bak and .bacpac files
