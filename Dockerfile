@@ -48,7 +48,7 @@ HEALTHCHECK \
     CMD /healthcheck.sh
 
 # Put CLI tools on the PATH (including sqlpackage)
-ENV PATH /opt/mssql-tools/bin:/opt/sqlpackage:$PATH
+ENV PATH=/opt/mssql-tools/bin:/opt/sqlpackage:$PATH
 
 # Create some base paths and place our provisioning script
 RUN mkdir /docker-entrypoint-initdb.d && \

@@ -1,0 +1,26 @@
+
+services:
+  database:
+    build: 
+      context: .
+      platforms:
+        - linux/amd64  # Force x86-64 platform
+    platform: linux/amd64  # Force x86-64 platform
+    environment:
+      - MSSQL_STARTUP_DELAY=30  # Faster startup for development
+    volumes:
+      # Mount source code for development
+      - ./scripts:/scripts
+      - ./docker-entrypoint.sh:/docker-entrypoint.sh
+      - ./healthcheck.sh:/healthcheck.sh
+    # Enable debug logging
+    command: ["/docker-entrypoint.sh", "/opt/mssql/bin/sqlservr", "--accept-eula"]
+    networks:
+      - default
+      - proxy
+
+networks:
+    default:
+    proxy:
+      external: true
+      name: proxy

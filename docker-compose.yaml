@@ -1,0 +1,40 @@
+
+services:
+  database:
+    build: .
+    # image: ghcr.io/design-group/mssql-docker:latest
+    hostname: azure-sql-db
+    volumes:
+      - ./test/fixtures:/backups
+      - ./test/fixtures/simulated-data:/simulated-data
+      - ./test/integration:/test-scripts
+      # Persistent data for development
+      - mssql-test-data:/var/opt/mssql
+    environment:
+      SA_PASSWORD: ${SA_PASSWORD:-} 
+    healthcheck:
+      test: ["CMD", "/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      traefik.enable: true
+      traefik.hostname: azure-sql-db
+      traefik.tcp.routers.azure-sql-db.entrypoints: "azure-sql"
+      traefik.tcp.routers.azure-sql-db.tls: false
+      traefik.tcp.routers.azure-sql-db.rule: "HostSNI(`*`)"
+      traefik.tcp.routers.azure-sql-db.service: "azure-sql-db-svc"
+      traefik.tcp.services.azure-sql-db-svc.loadbalancer.server.port: 1433
+    networks:
+      - default
+      - proxy
+
+volumes:
+  mssql-test-data:
+
+networks:
+    default:
+    proxy:
+      external: true
+      name: proxy
