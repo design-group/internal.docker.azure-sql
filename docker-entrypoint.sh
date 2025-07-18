@@ -204,10 +204,12 @@ restore_bacpac_files() {
     echo "=== Restoring .bacpac files - Dynamic Login Handling ==="
     
     # Clear the login creation log to prevent continuous growth
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting .bacpac restore process" > /tmp/login_creation.log
+    # Fix for SC2129: Use grouped commands instead of individual redirects
+    {
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - Starting .bacpac restore process"
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - Creating generic app_user login"
+    } > /tmp/login_creation.log
     
-    # Create generic app_user login
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - Creating generic app_user login" >> /tmp/login_creation.log
     sqlcmd -S localhost -U sa -Q "IF NOT EXISTS (SELECT 1 FROM sys.server_principals WHERE name = 'app_user') CREATE LOGIN [app_user] WITH PASSWORD = N'${SA_PASSWORD}', CHECK_POLICY = OFF, CHECK_EXPIRATION = OFF;" >> /tmp/login_creation.log 2>&1
 
     # Extract and create logins from all .bacpac files
@@ -358,18 +360,24 @@ EOF
 # Simplified progress monitoring function
 monitor_import_progress() {
     local database_name="$1"
-    local start_time=$(date +%s)
+    # Fix for SC2155: Declare and assign separately
+    local start_time
+    start_time=$(date +%s)
     
     while true; do
         sleep 15
         
-        local current_time=$(date +%s)
+        # Fix for SC2155: Declare and assign separately
+        local current_time
+        current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
         local elapsed_min=$((elapsed / 60))
         local elapsed_sec=$((elapsed % 60))
         
         # Check if database exists
-        local db_status=$(sqlcmd -S localhost -U sa -h -1 -Q "SELECT ISNULL((SELECT state_desc FROM sys.databases WHERE name = '$database_name'), 'NOT_FOUND')" 2>/dev/null | tr -d ' \r\n' | tail -1)
+        # Fix for SC2155: Declare and assign separately
+        local db_status
+        db_status=$(sqlcmd -S localhost -U sa -h -1 -Q "SELECT ISNULL((SELECT state_desc FROM sys.databases WHERE name = '$database_name'), 'NOT_FOUND')" 2>/dev/null | tr -d ' \r\n' | tail -1)
         
         echo "$(date '+%H:%M:%S') - [${elapsed_min}m${elapsed_sec}s] Database: $database_name | Status: $db_status"
         
